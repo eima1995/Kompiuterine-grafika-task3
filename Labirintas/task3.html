@@ -1,0 +1,452 @@
+<html>
+<head>
+    <title>3 Task - Lab</title>
+    <script  src="https://klevas.mif.vu.lt/~rimask/webgl/learning-threejs/libs/three.js"></script>
+    <script  src="https://klevas.mif.vu.lt/~rimask/webgl/learning-threejs/libs/jquery-1.9.0.js"></script>
+    <script  src="https://klevas.mif.vu.lt/~rimask/webgl/learning-threejs/libs/TrackballControls.js"></script>
+    <script  src="https://klevas.mif.vu.lt/~rimask/webgl/learning-threejs/libs/stats.js"></script>
+    <script  src="https://klevas.mif.vu.lt/~rimask/webgl/learning-threejs/libs/dat.gui.js"></script>
+    <script  src="https://klevas.mif.vu.lt/~rimask/webgl/learning-threejs/libs/FirstPersonControls.js"></script>
+    <script src="http://threejs.org/build/three.min.js"></script>
+    <script src="http://threejs.org/examples/js/renderers/SVGRenderer.js"></script>
+    <script src="http://threejs.org/examples/js/renderers/Projector.js"></script>
+    <script src="http://threejs.org/examples/js/loaders/SVGLoader.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="WebGL-output">
+    </div>
+    <script >
+        $(function () {
+
+            var start = { x: 168, y: 7, z: 330 };
+            var pathKoords = [];
+            var koords = [];
+
+            var h = 5;
+            var step = { x: 0, y: 0, z: 0 };
+            var ballSpeed = 1;
+
+            var dollyCam = false;
+            var topCamera = false;
+            var freeCam = true;
+            var consoleDebug = false;
+            var startBall = false;
+            var backward = false;
+            
+            var clock = new THREE.Clock();
+            var scene = new THREE.Scene();
+            var renderer = new THREE.WebGLRenderer();
+            renderer.setClearColor('#071019', 1.0);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+
+			//grindys
+            var planeGeometry = new THREE.PlaneGeometry(400, 400,100,100);
+            var planeMaterial = new THREE.MeshLambertMaterial({ color: 0xffdb4d });
+            var plane = new THREE.Mesh(planeGeometry, planeMaterial);
+ 
+            plane.rotation.x = -0.5 * Math.PI;
+            plane.position.x = 160
+            plane.position.y = 0
+            plane.position.z = 160
+            scene.add(plane);
+			
+
+ //------------------LIGHTS-------------------------
+            var ambientLight = new THREE.AmbientLight("#9e9e9e");
+            scene.add(ambientLight);
+//------------------MAZE LOADER-------------------------
+            var svgManager = new THREE.SVGLoader();
+            var url = 'maze.svg';		   
+            svgManager.load(url,
+                svg_loading_done_callback,
+                function () { console.log("Loading SVG..."); },
+                function () { console.log("Error loading SVG!"); });
+
+            function svg_loading_done_callback(doc) {
+                var obj = new THREE.SVGObject(doc)
+                koords = getKoords(obj);
+                renderFatWalls(koords);
+                LoadNodes();
+            };                  
+//------------------CAMERA-------------------------
+            var camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);       			
+		    camera.rotation.x = -0.5 * Math.PI;
+			camera.position.y = 400;
+            var trackballControls = new THREE.TrackballControls(camera);
+            trackballControls.rotateSpeed = 2.0;
+            trackballControls.zoomSpeed = 5.0;
+            trackballControls.panSpeed = 2.0;
+            trackballControls.staticMoving = true;
+            trackballControls.target = new THREE.Vector3(100, 20, 200);
+            var defaultFov = camera.fov;
+
+//------------------CONTROLS-------------------------
+            $("#WebGL-output").append(renderer.domElement);
+            var controls = new function () {
+ 
+                this.Thick_Walls = function () {
+					RemoveMaze();
+                    renderFatWalls(koords);
+                   // LoadNodes();
+                };
+                this.FreeCamera = function () {
+                    freeCam = true
+                    dollyCam = false;
+                    topCamera = false;
+
+                    camera.fov = defaultFov;
+                    camera.updateProjectionMatrix();
+                };
+                this.DollyCamera = function () {
+                    camera.position.x = 150;
+                    camera.position.y = 150;
+                    camera.position.z = 150;
+
+                    freeCam = false
+                    dollyCam = true;
+                    topCamera = false;
+
+                    dobyEffect = 45;
+                    camera.fov = defaultFov;
+                    camera.updateProjectionMatrix();
+                };
+
+                this.TopCamera = function () {
+                    freeCam = false
+                    dollyCam = false;
+                    topCamera = true;
+
+                    camera.fov = defaultFov;
+                    camera.updateProjectionMatrix();
+                };
+
+                this.Play = function () {
+                    startBall = !startBall;                  
+                };
+				
+				this.Debug = function () {
+                    consoleDebug = !consoleDebug;
+                };
+            }
+            var gui = new dat.GUI();
+            //gui.add(controls, 'Thick_Walls');
+			gui.add(controls, 'Play');
+			//gui.add(controls, 'FreeCamera', [ 'FreeCamera', 'TopCamera', 'DollyCamera' ] );
+            gui.add(controls, 'FreeCamera');
+            gui.add(controls, 'TopCamera');
+            gui.add(controls, 'DollyCamera');           
+            //gui.add(controls, 'Debug');   
+//------------------BALL-------------------------
+            var ballMesh = createBall();
+            ballMesh.position.x = start.x;
+            ballMesh.position.y = start.y;
+            ballMesh.position.z = start.z;
+
+            var nextPath = 0;
+
+            render();
+
+//------------------RENDER-------------------------
+
+            function render() {
+
+                if (startBall) {
+                    animate();
+                }
+
+                if (freeCam) {
+                    var delta = clock.getDelta();
+                    trackballControls.update(delta);
+                }
+                else if (dollyCam) {
+                    DollyCam();
+                }
+                else if (topCamera) {
+                    TopCamera();
+                }                
+
+                requestAnimationFrame(render);
+                renderer.render(scene, camera)
+            }
+
+
+//------------------BALL MOVEMENT-------------------------
+
+            function animate() {
+                if (pathKoords.length > 0) {
+					if(nextPath < pathKoords.length){
+						if (Math.round(ballMesh.position.z) != pathKoords[nextPath].z || Math.round(ballMesh.position.x) != pathKoords[nextPath].x) {
+							var direction;
+							
+							if(pathKoords[nextPath].x != start.x) {
+								if(pathKoords[nextPath].x > start.x)
+									direction = new THREE.Vector3(ballSpeed, 0, 0);
+								else
+									direction = new THREE.Vector3(-1*ballSpeed, 0, 0);
+							} 
+
+							if(pathKoords[nextPath].z != start.z) {
+								if(pathKoords[nextPath].z > start.z)
+									direction = new THREE.Vector3(0, 0, ballSpeed);
+								else
+									direction = new THREE.Vector3(0, 0, -1*ballSpeed);
+							} 
+							
+							ballMesh.position.add(direction);
+							
+							var stepSize = ballSpeed / 5;     
+							if(direction.x != 0) {   
+								if(direction.x < 0)
+									stepSize =stepSize * -1;
+								ballMesh.rotation.z = step.x -= stepSize;
+							}else if(direction.z != 0)  {           
+								if(direction.z < 0)
+									stepSize =stepSize * -1;
+								ballMesh.rotation.x = step.z += stepSize;
+							}                       
+						} else {    
+							ballMesh.rotation.z = 0;
+							ballMesh.rotation.x = 0; 
+						
+							start = pathKoords[nextPath];
+										
+								nextPath++;
+						}
+					}
+                } 
+            }
+                     
+            function DollyCam() {
+                camera.lookAt(ballMesh.position);
+                var zoomingIn = true;
+                if (zoomingIn && camera.position.y > 18) {                    
+                    var zDistance = ballMesh.position.z - camera.position.z;
+                    var xDistance = ballMesh.position.x - camera.position.x;
+                    var yDistance = camera.position.y - ballMesh.position.y;
+                    camera.position.z += (ballMesh.position.z - camera.position.z) / 100;
+                    camera.position.x += (ballMesh.position.x - camera.position.x) / 100;
+                    camera.position.y -= (camera.position.y - ballMesh.position.y) / 100;
+                    var distance = Math.sqrt(zDistance * zDistance + xDistance * xDistance + yDistance * yDistance);                    
+                    var wid = window.innerHeight / 15;
+                    vFOV = 2 * Math.atan(wid / (2 * distance)); 
+                    fovDegrees = vFOV * 180 / Math.PI; 
+                    camera.fov = fovDegrees;
+                    camera.updateProjectionMatrix();
+                }
+            }
+            function TopCamera() {
+                camera.position.x = 150;//ballMesh.position.x;
+                camera.position.y = 100;
+                camera.position.z = 150;//ballMesh.position.z;
+
+                camera.lookAt(ballMesh.position);
+            }
+            
+//------------------FAT WALLS-------------------------
+
+            function renderFatWalls(koords) {
+                for (var i = 0; i < koords.length; i++) {
+					var hx = 0, hz = 0;                                   
+                    var x = (parseInt(koords[i].x1) + parseInt(koords[i].x0)) / 2; //plotis
+                    var y = 10;
+                    var z = (parseInt(koords[i].z1) + parseInt(koords[i].z0)) / 2; //ilgis             
+                    createCube(x, z, 10, koords[i].wx + 2, 15, koords[i].wz + 2);  /// 15 - yra aukstis antrasis param pirmas pakeluimas
+                }
+            }
+ // ============================================================
+           
+            function createCube(x, z, y, wx, wy, wz) {
+                var geo = createGeometry(wx, wy, wz, x, z);  //canculate UV coordintes
+                var cube = createMesh(geo);
+                cube.position.x = x;
+                cube.position.z = z;
+                cube.position.y = y;
+                // cube.rotation.z = 0.5 * Math.PI;
+                scene.add(cube);
+                return cube;
+            }
+            function createMesh(geom) {
+                var materials = [];
+                var loader = new THREE.TextureLoader();                
+                loader.load('img/LightBrick.png', function (texture) {
+                    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                    texture.offset.set(0, 0);
+                    texture.repeat.set(10, 1);
+                    materials.push(new THREE.MeshPhongMaterial({ map: texture }));
+                });//right
+                loader.load('img/OldChicago.png', function (texture) {
+                    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                    texture.offset.set(0, 0);
+                    texture.repeat.set(10, 1);
+                    materials.push(new THREE.MeshPhongMaterial({ map: texture }));
+                });//left
+                loader.load('img/BlackHerringbone.png', function (texture) {
+                    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                    texture.offset.set(0, 0);
+                    texture.repeat.set(5, 5);
+                    materials.push(new THREE.MeshPhongMaterial({ map: texture }));
+                });//up
+                loader.load('img/rock.png', function (texture) {
+                    materials.push(new THREE.MeshPhongMaterial({ map: texture }));
+                });//bottom
+                loader.load('img/bricks.jfif', function (texture) { // 
+                    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                    texture.offset.set(0, 0);
+                    texture.repeat.set(10, 1);
+                    materials.push(new THREE.MeshPhongMaterial({ map: texture }));
+                }); // front
+                loader.load('img/redWall.png', function (texture) {
+                    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                    texture.offset.set(0, 0);
+                    texture.repeat.set(10, 1);
+                    materials.push(new THREE.MeshPhongMaterial({ map: texture }));
+                });// back
+
+                var mesh = new THREE.Mesh(geom, materials);
+                return mesh;
+            }
+
+            var max1 = 0;
+
+            function createGeometry(o, t, tr, xc, zc) {
+                var limit = 0.8;
+                var geometry = new THREE.CubeGeometry(o+2, t, tr+2);
+
+                geometry.computeBoundingBox();
+
+                var max = geometry.boundingBox.max,
+                    min = geometry.boundingBox.min;
+                var xMax = xc + max.x;
+                var xMin = xc + min.x;
+                minUx = xMin / 324;
+                maxUx = xMax / 324;        
+                var zMax = zc + max.z;
+                var zMin = zc + min.z;
+                minUz = zMin / 484;
+                maxUz = zMax / 484;
+                                                
+                var side1 = [new THREE.Vector2(minUz, 0), new THREE.Vector2(minUz, 1), new THREE.Vector2(maxUz, 1), new THREE.Vector2(maxUz, 0)];// lightbrick
+                var side2 = [new THREE.Vector2(minUz, 1), new THREE.Vector2(minUz, 0), new THREE.Vector2(maxUz, 0), new THREE.Vector2(maxUz, 1)]; // dark brick
+                var side3 = [new THREE.Vector2(minUx, 0), new THREE.Vector2(minUx, 1), new THREE.Vector2(maxUx, 1), new THREE.Vector2(maxUx, 0)]; // whitebrick
+                var side4 = [new THREE.Vector2(maxUx, 0), new THREE.Vector2(maxUx, 1), new THREE.Vector2(minUx, 1), new THREE.Vector2(minUx, 0)]; // orangebrick     
+                
+                var side5 = [new THREE.Vector2(minUx, minUz), new THREE.Vector2(minUx, maxUz), new THREE.Vector2(maxUx, maxUz), new THREE.Vector2(maxUx, minUz)]; // orangebrick 
+
+                geometry.faceVertexUvs[0][0] = [side1[0], side1[1], side1[3]];
+                geometry.faceVertexUvs[0][1] = [side1[1], side1[2], side1[3]];
+                geometry.faceVertexUvs[0][2] = [side2[0], side2[1], side2[3]];
+                geometry.faceVertexUvs[0][3] = [side2[1], side2[2], side2[3]];                
+                geometry.faceVertexUvs[0][8] = [side3[0], side3[1], side3[3]];
+                geometry.faceVertexUvs[0][9] = [side3[1], side3[2], side3[3]];
+                geometry.faceVertexUvs[0][10] = [side4[0], side4[1], side4[3]];
+                geometry.faceVertexUvs[0][11] = [side4[1], side4[2], side4[3]];
+                geometry.faceVertexUvs[0][4] = [side5[0], side5[1], side5[3]];
+                geometry.faceVertexUvs[0][5] = [side5[1], side5[2], side5[3]];
+                
+                geometry.uvsNeedUpdate = true;
+
+                return geometry;
+            }
+
+            //------------------MAZE SVG READER-------------------------
+
+            function getKoords(doc) {
+                var koords = [];
+                var res = doc.node.lastElementChild.innerHTML.split("<line");
+                res.splice(0, 1);
+                for (var i = 0; i < res.length; i++) {
+                    var repl = [' xmlns="http://www.w3.org/2000/svg" ', "/>", 'x1=', 'y1=', 'x2=', 'y2=', /["']/g];
+                    for (var j = 0; j < repl.length; j++) { res[i] = res[i].replace(repl[j], ""); }
+                    res[i] = res[i].trim().split(" ");
+                    koords.push({
+                        i: i, x0: res[i][0], z0: res[i][1], x1: res[i][2], z1: res[i][3], wx: (parseInt(res[i][2]) - parseInt(res[i][0])), wz: (parseInt(res[i][3]) - parseInt(res[i][1])),
+                    });
+                }
+                return koords;
+            }
+            //------------------PATH LIGHTS-------------------------
+
+            function createBall() {
+                var textu = new THREE.TextureLoader().load('img/football.png');
+                var ballGeometry = new THREE.SphereGeometry(4, 32, 32);
+                var ballMaterial = new THREE.MeshPhongMaterial();
+                ballMaterial.map = textu;
+                var ballMesh = new THREE.Mesh(ballGeometry, ballMaterial);
+                ballMesh.castShadow = true;
+                scene.add(ballMesh);
+                return ballMesh;
+            }
+            
+            function LoadNodes() {
+                var h = 7;
+                pathKoords = [
+                    { x: 168, y: h, z: 315 },
+                    { x: 123, y: h, z: 315 },
+                    { x: 123, y: h, z: 266 },
+                    { x: 138, y: h, z: 266 },
+                    { x: 138, y: h, z: 250 },
+                    { x: 154, y: h, z: 250 },
+                    { x: 154, y: h, z: 235 },
+                    { x: 170, y: h, z: 235 },
+                    { x: 170, y: h, z: 250 },
+                    { x: 186, y: h, z: 250 },
+                    { x: 186, y: h, z: 203 },
+                    { x: 170, y: h, z: 203 },
+                    { x: 170, y: h, z: 187 },
+                    { x: 186, y: h, z: 187 },
+                    { x: 186, y: h, z: 155 },
+                    { x: 217, y: h, z: 155 },
+                    { x: 217, y: h, z: 138 },
+                    { x: 202, y: h, z: 138 },
+                    { x: 202, y: h, z: 122 },
+                    { x: 250, y: h, z: 122 },
+                    { x: 250, y: h, z: 138 },
+                    { x: 235, y: h, z: 138 },
+                    { x: 235, y: h, z: 155 },
+                    { x: 266, y: h, z: 155 },
+                    { x: 266, y: h, z: 106 },
+                    { x: 250, y: h, z: 106 },
+                    { x: 250, y: h, z: 75 },
+                    { x: 235, y: h, z: 75 },
+                    { x: 235, y: h, z: 106 },
+                    { x: 202, y: h, z: 106 },
+                    { x: 202, y: h, z: 91 },
+                    { x: 186, y: h, z: 91 },
+                    { x: 186, y: h, z: 122 },
+                    { x: 154, y: h, z: 122 },
+                    { x: 154, y: h, z: 106 },
+                    { x: 170, y: h, z: 106 },
+                    { x: 170, y: h, z: 91 },
+                    { x: 138, y: h, z: 91 },
+                    { x: 138, y: h, z: 75 },
+                    { x: 107, y: h, z: 75 },
+                    { x: 107, y: h, z: 42 },
+                    { x: 91, y: h, z: 42 },
+                    { x: 91, y: h, z: 10 },
+                    { x: 154, y: h, z: 10 },
+					{ x: 154, y: h, z: -10 },
+                ];
+            }
+            
+            //------------------REMOVE MAZE-------------------------
+
+            function RemoveMaze() {
+                var allChildren = scene.children;
+                for (var i = scene.children.length - 1; i >= 0; i--) {
+                    var lastObject = allChildren[i];
+                    if ((lastObject instanceof THREE.Mesh || lastObject instanceof THREE.PointLight) && lastObject != plane) {
+                        scene.remove(lastObject);
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
